@@ -13,11 +13,8 @@
 1. [🦉 What you're building](#1--what-are-you-building)
 2. [🐘 Why build it](#2--why-are-you-building-it)
 3. [🦫 System architecture](#3--system-architecture)
-4. [🐙 Tech stack](#4--tech-stack)
-5. [🐜 Evaluation](#5--evaluation)
-6. [🐛 Document corpus](#6--document-corpus)
-7. [🐎 Milestones & timeline](#7--milestones-and-timeline)
-8. [🦅 Final deliverables](#8--final-deliverables)
+4. [🐎 Milestones & timeline](#4--milestones-and-timeline)
+5. [🦅 Final deliverables](#5--final-deliverables)
 
 ---
 
@@ -45,7 +42,7 @@ Medical labs run many assays across multiple analyzers and test kits, each gover
 
 BenchIQ replaces this: **ask once or follow up questions, in plain language or by voice, and get the exact passage and diagram — cited, from across all documents at once.** It answers only from the lab's validated documents and refuses when they don't cover the question. The longer-term vision extends to other healthcare workers navigating large procedural document sets.
 
-## 3. 🦫 System architecture
+## 3. 🦫 Planned System architecture (Not final)
 
 An **agentic RAG core** behind thin API layers. A tool-calling agent orchestrates each turn over pluggable retrieval, storage, and model providers, plus multimodal ingestion and a voice layer.
 
@@ -88,40 +85,9 @@ flowchart TB
     AG --> LLM[LLM + VLM providers]
 ```
 
-- **Agentic orchestration** — the agent (e.g., Google ADK) picks tools (KB retrieval, figure lookup, web-search fallback, clarify), can loop, verifies grounding, and answers or abstains.
-- **Multimodal ingestion** — upload → validate → de-duplicate → extract text + figures → caption figures (VLM) → link figure↔text → chunk, embed, index → store images.
-- **Hybrid retrieval + rerank** — dense + lexical signals with an optional reranker, fused (e.g., RRF); enriched citations (document/section, not just filename + page); linked figures returned inline. Specific choices are compared in [Evaluation](#5--evaluation).
-- **Grounding & citations** — answer only from retrieved context; show only the sources the answer actually used.
-- **Voice layer** — speech-to-text for questions, text-to-speech for answers, as a UI toggle.
 
-## 4. 🐙 Tech stack
 
-The **agentic workflow** is the committed direction; retrieval/ranking/model choices are candidates still in research (see [Evaluation](#5--evaluation)).
-
-- **Agent:** a tool-calling framework, e.g., Google **ADK**.
-- **LLM / VLM:** e.g., Gemini (via Vertex AI) or another hosted LLM; a vision model for figure captioning.
-- **Retrieval (in research):** embeddings (Gemini or open-source) + a vector store (managed, e.g., Firestore, or self-hosted, e.g., Qdrant/pgvector) + a lexical signal (BM25) + an optional reranker, fused by a method like RRF.
-- **Voice:** Google Cloud **Speech-to-Text** + **Text-to-Speech**.
-- **App:** Python/FastAPI (SSE streaming) backend; React UI; a database for sessions/rate limiting (e.g., Firestore); optional web-search fallback (Tavily / Google grounding).
-- **Deployment:** Docker on GCP Cloud Run.
-
-## 5. 🐜 Evaluation
-
-Evaluation is a **research step**, still being scoped — it compares the candidate configurations above and picks the shipping one from evidence rather than intuition. It follows the standard **"RAG Triad"** (retrieval relevance, faithfulness, answer relevance) with **LLM-as-judge** scoring, plus citation accuracy and correct abstention, over a small golden Q/A set.
-
-Experiments under consideration: which retrieval/ranking configuration wins, what the lexical signal adds (hybrid vs. dense-only), and how quality holds up as the corpus grows (**1 → 5 → 10 documents**, a distractor-robustness check). The harness and results are committed under `eval/`.
-
-## 6. 🐛 Document corpus
-
-Small and curated (5–10 documents to start), chosen to be legally safe and realistic:
-
-- **Real analyzer manual excerpts** — where license permits.
-- **Public kit inserts / IFUs** — e.g., mononucleosis rapid tests, hCG urine/serum pregnancy tests; rich in result-interpretation figures, ideal for multimodal testing.
-- **Synthetic SOPs** — representative lab procedures (QC, specimen handling, result interpretation, maintenance) mirroring real SOP structure without proprietary content.
-
-The corpus is committed (or scripted to fetch) with provenance noted, so the document-scaling evaluation is reproducible.
-
-## 7. 🐎 Milestones and timeline
+## 4. 🐎 Milestones and timeline
 
 Aligned to the course schedule (Week 8 / 11 / 14). *Exact dates to be confirmed against the syllabus.*
 
@@ -131,9 +97,9 @@ Aligned to the course schedule (Week 8 / 11 / 14). *Exact dates to be confirmed 
 | **M2 — Voice + app + eval harness** | **Week 11** | Voice mode (STT in, TTS out); polished chat UI (streaming, citations, inline figures, source scoping); golden set authored and eval harness running with first results. |
 | **M3 — Scaling eval + polish** | **Week 14** | Document-scaling and hybrid-vs-dense experiments; light multimodal eval; UI polish and visible abstention; final report, demo, docs. |
 
-## 8. 🦅 Final deliverables
+## 5. 🦅 Final deliverables
 
-The graded artifact is **a working prototype web app plus committed evaluation results**, presented in class.
+The final deliverable will be **a working prototype web app plus committed evaluation results**, presented in class.
 
 - **Deployed web app** (Cloud Run) — voice-enabled chat UI + admin ingestion UI running the multimodal agentic workflow.
 - **Multimodal ingestion pipeline** — real manuals/kit inserts → indexed knowledge base where figures are retrievable and returned.
