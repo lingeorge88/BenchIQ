@@ -85,13 +85,15 @@ flowchart TB
 
 ## 4. 🐎 Milestones and timeline
 
-Aligned to the course schedule (Week 8 / 11 / 14). *Exact dates to be confirmed against the syllabus.*
+Planned implementation schedule:
 
 | Milestone | Target | Scope |
 |---|---|---|
-| **M1 — Ingestion + retrieval** | **Week 8** | Multimodal ingestion (text + figures, figure↔text linking, captioning); hybrid retrieval returning cited answers with inline diagrams; initial corpus ingested; basic Cloud Run build. |
-| **M2 — Voice + app + eval harness** | **Week 11** | Voice mode (STT in, TTS out); polished chat UI (streaming, citations, inline figures, source scoping); golden set authored and eval harness running with first results. |
-| **M3 — Scaling eval + polish** | **Week 14** | Document-scaling and hybrid-vs-dense experiments; light multimodal eval; UI polish and visible abstention; final report, demo, docs. |
+| **M0 — Project setup & scaffolding** | **Week 5** | Repo + CI skeleton; backend (FastAPI + SSE) and frontend (React) scaffolds wired end-to-end; LLM + embedding provider integration; a hello-world build deployed to Cloud Run; corpus collection begun. |
+| **M1 — Agentic retrieval core** | **Weeks 6–7** | Tool-calling agent stood up (plan → retrieve → answer); vector store + text ingestion so the agent answers from a few documents with citations; basic chat UI talking to the agent end-to-end. |
+| **M2 — Multimodal ingestion + retrieval** | **Week 8** | Ingestion extended to figures/diagrams (figure↔text linking, captioning); hybrid retrieval returning cited answers with inline diagrams; full initial corpus ingested. |
+| **M3 — Voice + app polish + eval harness** | **Week 11** | Voice mode (STT in, TTS out); polished chat UI (streaming, citations, inline figures, source scoping); golden set authored and eval harness running with first results. |
+| **M4 — Scaling eval + polish** | **Week 14** | Document-scaling and hybrid-vs-dense experiments; light multimodal eval; UI polish and visible abstention; final report, demo, docs. |
 
 ## 5. 🦅 Final deliverables
 
