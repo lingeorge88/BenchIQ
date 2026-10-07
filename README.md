@@ -20,9 +20,9 @@
 
 Three key features:
 
-1. **Multimodal ingestion** — ingests text *and* figures/diagrams, links each figure to its context, and returns the relevant diagram with the answer.
-2. **Voice mode** — ask by speech, hear the answer read back, for hands-busy bench work.
-3. **A usable app** — streaming answers, expandable citations, inline figures, and source scoping; fast enough to answer in seconds.
+1. **Multimodal ingestion** : ingests text *and* figures/diagrams, links each figure to its context, and returns the relevant diagram with the answer.
+2. **Voice mode** : ask by speech, hear the answer read back, for hands-busy bench work.
+3. **A usable app** : streaming answers, expandable citations, inline figures, and source scoping; fast enough to answer in seconds.
 
 Under the hood it runs as an **agentic workflow**: a tool-calling agent retrieves (and looks up figures) as needed, re-queries when results are thin, checks that its answer is grounded, and abstains when the documents don't cover the question — not a single fixed API call. A moderate **evaluation step** (treated as research) compares configurations so design choices are evidence-driven.
 
@@ -31,12 +31,12 @@ Under the hood it runs as an **agentic workflow**: a tool-calling agent retrieve
 
 Medical labs run many assays across multiple analyzers and test kits, each governed by a dense manual or SOP. Finding one answer today is slow:
 
-- **Paper binders.** Many labs still keep SOPs and manuals on paper — locate the binder, flip to the page.
+- **Paper binders.** Many labs still keep SOPs and manuals on paper; locate the binder, flip to the page.
 - **Keyword-only search.** Digital document-control systems match literal keywords, not meaning, so you must remember the manual's exact wording.
 - **Too many near-identical files.** Large healthcare systems share document stores with tens of thousands of files and near-duplicate names; finding the right one takes time, and keyword search inside it may still miss.
-- **Figures are invisible.** The diagram you need — a pipetting step, how to read a result window — can't be found by text search.
+- **Figures are invisible.** The diagram you need, like a pipetting step, how to read a result window can't be easily found by text search.
 
-BenchIQ replaces this: **ask once or follow up questions, in plain language or by voice, and get the exact passage and diagram — cited, from across all documents at once.** It answers only from the lab's validated documents and refuses when they don't cover the question. The longer-term vision extends to other healthcare workers navigating large procedural document sets.
+BenchIQ replaces this: **ask once or follow up questions, in plain language or by voice, and get the exact passage and diagram; cited, from across all documents at once.** It answers only from the lab's validated documents and refuses when they don't cover the question. The longer-term vision extends to other healthcare workers navigating large procedural document sets.
 
 ## 3. 🦫 Planned System architecture (Not final)
 
