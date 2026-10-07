@@ -2,10 +2,6 @@
 
 **A multimodal, voice-enabled RAG assistant that helps medical lab professionals instantly find the right procedure, diagram, or answer across their SOPs and analyzer manuals — replacing slow keyword search and paper binders.**
 
-> CS6180 Generative AI — Project Proposal
-> Author: George Lin (`lin.geor@northeastern.edu`)
-> Repository: https://github.com/lingeorge88/BenchIQ
-
 ---
 
 ## Contents
