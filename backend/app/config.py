@@ -10,13 +10,35 @@ GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT")
 GOOGLE_CLOUD_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-west1")
 RETRIEVAL_PROVIDER = os.environ.get("RETRIEVAL_PROVIDER", "legacy")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+ALLOWED_MODELS = [
+    m.strip()
+    for m in os.environ.get(
+        "ALLOWED_MODELS",
+        "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-2.5-flash",
+    ).split(",")
+    if m.strip()
+]
+if GEMINI_MODEL not in ALLOWED_MODELS:
+    ALLOWED_MODELS.insert(0, GEMINI_MODEL)
+THINKING_LEVEL = os.environ.get("THINKING_LEVEL", "LOW")
+
+MODEL_INFO = {
+    "gemini-3.5-flash-lite": {"label": "Balanced (default)", "price_note": "$0.30/$2.50 per 1M"},
+    "gemini-3.1-flash-lite": {"label": "Cheapest", "price_note": "$0.25/$1.50 per 1M"},
+    "gemini-2.5-flash": {"label": "Legacy baseline", "price_note": "retiring"},
+}
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIMENSION = 2048
+EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-west1")
 
-DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "10"))
+TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-Chirp3-HD-Aoede")
+STT_MODEL = os.environ.get("STT_MODEL", "gemini-3.1-flash-lite")
+STT_LOCATION = os.environ.get("STT_LOCATION", "global")
+
+DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "5"))
 BURST_REQUEST_LIMIT = int(os.environ.get("BURST_REQUEST_LIMIT", "3"))
 
 FIRESTORE_CHUNKS_COLLECTION = "medical_chunks"

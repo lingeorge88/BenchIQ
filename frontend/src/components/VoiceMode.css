@@ -1,0 +1,70 @@
+.voice-orb {
+  width: min(48vw, 220px);
+  height: min(48vw, 220px);
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: radial-gradient(circle at 35% 30%,
+    color-mix(in srgb, var(--accent) 35%, #ffffff) 0%,
+    var(--accent) 45%,
+    color-mix(in srgb, var(--accent) 60%, #6d28d9) 100%);
+  box-shadow: 0 0 60px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: transform 0.3s ease, filter 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.voice-orb:focus-visible {
+  outline: 3px solid var(--text-primary);
+  outline-offset: 6px;
+}
+
+.voice-orb.idle,
+.voice-orb.muted {
+  filter: grayscale(0.7) brightness(0.8);
+}
+
+.voice-orb.listening:not(.muted) {
+  animation: voice-pulse 2.4s ease-in-out infinite;
+  /* `scale` composes with the keyframe `transform`, so the orb swells with mic level. */
+  scale: calc(1 + var(--level, 0) * 0.35);
+  transition: scale 0.08s linear;
+}
+
+.voice-orb.thinking {
+  background: conic-gradient(from 0deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 40%, #a855f7),
+    color-mix(in srgb, var(--accent) 30%, #ffffff),
+    var(--accent));
+  animation: voice-rotate 2.8s linear infinite, voice-breathe 2.8s ease-in-out infinite;
+}
+
+.voice-orb.speaking {
+  animation: voice-speak 0.9s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { transform: scale(0.94); box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 30%, transparent); }
+  50% { transform: scale(1); box-shadow: 0 0 70px color-mix(in srgb, var(--accent) 55%, transparent); }
+}
+
+@keyframes voice-rotate {
+  to { rotate: 360deg; }
+}
+
+@keyframes voice-breathe {
+  0%, 100% { scale: 0.88; }
+  50% { scale: 0.94; }
+}
+
+@keyframes voice-speak {
+  0%, 100% { transform: scale(1); }
+  20% { transform: scale(1.07, 1.03); }
+  45% { transform: scale(0.98, 1.05); }
+  70% { transform: scale(1.05, 0.99); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb { animation-duration: 6s !important; }
+}

@@ -38,7 +38,7 @@ def _get_genai_client():
         _genai_client = genai.Client(
             vertexai=True,
             project=config.GOOGLE_CLOUD_PROJECT,
-            location=config.GOOGLE_CLOUD_LOCATION,
+            location=config.EMBEDDING_LOCATION,
         )
     return _genai_client
 

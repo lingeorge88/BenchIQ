@@ -1,4 +1,5 @@
 from google.adk.agents import LlmAgent
+from google.genai import types
 from app.retrieval.legacy_retriever import LegacyRetriever
 from app.search.tavily_search import TavilySearch
 from app.agent.instructions import AGENT_INSTRUCTION
@@ -120,10 +121,20 @@ def ask_clarification(question: str) -> str:
     return f"I need a bit more information to help you: {question}"
 
 
-root_agent = LlmAgent(
-    model=config.GEMINI_MODEL,
-    name="medical_assistant",
-    description="Medical laboratory analyzer specialist with access to IFU documentation and web search.",
-    instruction=AGENT_INSTRUCTION,
-    tools=[search_knowledge_base, web_search, ask_clarification],
-)
+def build_agent(model: str) -> LlmAgent:
+    generate_content_config = None
+    if model.startswith("gemini-3"):
+        generate_content_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_level=config.THINKING_LEVEL)
+        )
+    return LlmAgent(
+        model=model,
+        name="medical_assistant",
+        description="Medical laboratory analyzer specialist with access to IFU documentation and web search.",
+        instruction=AGENT_INSTRUCTION,
+        tools=[search_knowledge_base, web_search, ask_clarification],
+        generate_content_config=generate_content_config,
+    )
+
+
+root_agent = build_agent(config.GEMINI_MODEL)

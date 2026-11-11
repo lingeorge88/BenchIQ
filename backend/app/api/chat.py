@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from google.genai import types
@@ -17,15 +17,24 @@ import uuid
 
 router = APIRouter()
 
-runner = None
+runners: dict = {}
 session_service = None
 rate_limiter = None
 APP_NAME = "medical_chat"
 
 
-def init(r, ss):
-    global runner, session_service, rate_limiter
-    runner = r
+VOICE_INSTRUCTION = (
+    "[VOICE MODE: The user is speaking and your answer will be read aloud. "
+    "Reply in 2-4 short, natural spoken sentences. No markdown, bullet points, "
+    "tables, headings, URLs, or emoji. Mention the source briefly in words, "
+    "e.g. \"according to the AU680 manual\". If steps are needed, give at most 3 "
+    "and offer to continue.]"
+)
+
+
+def init(r: dict, ss):
+    global runners, session_service, rate_limiter
+    runners = r
     session_service = ss
     rate_limiter = RateLimitService()
 
@@ -33,12 +42,27 @@ def init(r, ss):
 class ChatRequest(BaseModel):
     msg: str
     session_id: str | None = None
+    model: str | None = None
+    voice: bool = False
 
 
 class ChatResponse(BaseModel):
     answer: str
     session_id: str
     quota: dict | None = None
+
+
+def _select_runner(model: str | None):
+    model_id = model or config.GEMINI_MODEL
+    r = runners.get(model_id)
+    if r is None:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
+    return model_id, r
+
+
+def _build_message(body: "ChatRequest") -> types.Content:
+    text = f"{VOICE_INSTRUCTION}\n\n{body.msg}" if body.voice else body.msg
+    return types.Content(role="user", parts=[types.Part(text=text)])
 
 
 def _get_client_id(request: Request, session_id: str) -> str:
@@ -87,6 +111,21 @@ async def list_sessions():
     ]
 
 
+@router.get("/models")
+async def list_models():
+    return {
+        "default": config.GEMINI_MODEL,
+        "models": [
+            {
+                "id": m,
+                "label": config.MODEL_INFO.get(m, {}).get("label", m),
+                "price_note": config.MODEL_INFO.get(m, {}).get("price_note", ""),
+            }
+            for m in config.ALLOWED_MODELS
+        ],
+    }
+
+
 @router.get("/quota")
 async def get_quota(request: Request, session_id: str = "default"):
     client_id = _get_client_id(request, session_id)
@@ -96,6 +135,7 @@ async def get_quota(request: Request, session_id: str = "default"):
 
 @router.post("/get", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest):
+    model_id, runner = _select_runner(body.model)
     session_id = body.session_id or str(uuid.uuid4())
     client_id = _get_client_id(request, session_id)
 
@@ -110,23 +150,22 @@ async def chat(request: Request, body: ChatRequest):
             },
         )
 
-    ctx = RequestContext(session_id=session_id)
+    ctx = RequestContext(session_id=session_id, model=model_id)
     rate_limiter.mark_active(session_id)
     try:
         await ensure_session(session_id)
-        content = types.Content(role="user", parts=[types.Part(text=body.msg)])
+        content = _build_message(body)
 
         final_text = ""
         async with asyncio.timeout(config.GENERATION_TIMEOUT):
             async for event in runner.run_async(
                 user_id="user", session_id=session_id, new_message=content
             ):
-                if hasattr(event, "actions") and event.actions:
-                    for action in event.actions.function_calls if hasattr(event.actions, "function_calls") and event.actions.function_calls else []:
-                        tool_name = action.name if hasattr(action, "name") else str(action)
-                        if tool_name not in ctx.tools_used:
-                            ctx.tools_used.append(tool_name)
-                            _track_tool(ctx, tool_name)
+                for call in event.get_function_calls():
+                    tool_name = call.name
+                    if tool_name not in ctx.tools_used:
+                        ctx.tools_used.append(tool_name)
+                        _track_tool(ctx, tool_name)
 
                 if event.is_final_response() and event.content and event.content.parts:
                     final_text = event.content.parts[0].text
@@ -160,6 +199,7 @@ async def chat(request: Request, body: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream(request: Request, body: ChatRequest):
+    model_id, runner = _select_runner(body.model)
     session_id = body.session_id or str(uuid.uuid4())
     client_id = _get_client_id(request, session_id)
 
@@ -176,10 +216,10 @@ async def chat_stream(request: Request, body: ChatRequest):
 
     rate_limiter.mark_active(session_id)
     await ensure_session(session_id)
-    content = types.Content(role="user", parts=[types.Part(text=body.msg)])
+    content = _build_message(body)
 
     async def generate():
-        ctx = RequestContext(session_id=session_id)
+        ctx = RequestContext(session_id=session_id, model=model_id)
         tools_used = []
         generating = False
 
@@ -190,15 +230,14 @@ async def chat_stream(request: Request, body: ChatRequest):
                 async for event in runner.run_async(
                     user_id="user", session_id=session_id, new_message=content
                 ):
-                    if hasattr(event, "actions") and event.actions:
-                        for action in event.actions.function_calls if hasattr(event.actions, "function_calls") and event.actions.function_calls else []:
-                            tool_name = action.name if hasattr(action, "name") else str(action)
-                            if tool_name not in tools_used:
-                                tools_used.append(tool_name)
-                                ctx.tools_used.append(tool_name)
-                                _track_tool(ctx, tool_name)
-                                message = TOOL_MESSAGES.get(tool_name, f"Using {tool_name}…")
-                                yield tool_start_event(tool_name, message)
+                    for call in event.get_function_calls():
+                        tool_name = call.name
+                        if tool_name not in tools_used:
+                            tools_used.append(tool_name)
+                            ctx.tools_used.append(tool_name)
+                            _track_tool(ctx, tool_name)
+                            message = TOOL_MESSAGES.get(tool_name, f"Using {tool_name}…")
+                            yield tool_start_event(tool_name, message)
 
                     if event.content and event.content.parts:
                         for part in event.content.parts:
@@ -210,7 +249,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                                 yield token_event(part.text)
 
             ctx.log_complete()
-            yield done_event(tools_used, _quota_dict(quota_result.state))
+            yield done_event(tools_used, _quota_dict(quota_result.state), model_id)
         except TimeoutError:
             ctx.status_code = 504
             ctx.error_type = "timeout"

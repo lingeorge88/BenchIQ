@@ -32,10 +32,12 @@ def token_event(text: str) -> str:
     return SSEEvent(type="token", data={"text": text}).encode()
 
 
-def done_event(tools_used: list[str], quota: dict | None = None) -> str:
+def done_event(tools_used: list[str], quota: dict | None = None, model: str | None = None) -> str:
     data: dict[str, Any] = {"tools_used": tools_used}
     if quota:
         data["quota"] = quota
+    if model:
+        data["model"] = model
     return SSEEvent(type="done", data=data).encode()
 
 

@@ -9,9 +9,10 @@ logger = logging.getLogger("medical_chat")
 
 
 class RequestContext:
-    def __init__(self, session_id: str = ""):
+    def __init__(self, session_id: str = "", model: str | None = None):
         self.request_id = str(uuid.uuid4())[:8]
         self.session_id = session_id
+        self.model = model
         self.start_time = time.time()
         self.tools_used: list[str] = []
         self.timings: dict[str, float] = {}
@@ -37,6 +38,7 @@ class RequestContext:
             "severity": "ERROR" if self.error_type else "INFO",
             "request_id": self.request_id,
             "session_id": self.session_id,
+            "model": self.model,
             "tools_used": self.tools_used,
             "kb_used": self.kb_used,
             "web_used": self.web_used,

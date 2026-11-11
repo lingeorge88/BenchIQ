@@ -3,9 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from google.adk.runners import Runner
-from app.agent.agent import root_agent
+from app.agent.agent import build_agent, root_agent
 from app.sessions.service import create_session_service
-from app.api import chat, health
+from app.api import chat, health, stt, tts
 from app import config
 import logging
 import os
@@ -19,13 +19,16 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     session_service = create_session_service()
-    runner = Runner(
-        agent=root_agent,
-        app_name="medical_chat",
-        session_service=session_service,
-    )
-    chat.init(runner, session_service)
-    print(f"ADK agent ready (env={config.ENVIRONMENT})")
+    runners = {
+        m: Runner(
+            agent=root_agent if m == config.GEMINI_MODEL else build_agent(m),
+            app_name="medical_chat",
+            session_service=session_service,
+        )
+        for m in config.ALLOWED_MODELS
+    }
+    chat.init(runners, session_service)
+    print(f"ADK agent ready (env={config.ENVIRONMENT}, models={list(runners)})")
     yield
 
 
@@ -45,6 +48,8 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(chat.router)
+app.include_router(tts.router)
+app.include_router(stt.router)
 
 frontend_build = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "build")
 if os.path.isdir(frontend_build):

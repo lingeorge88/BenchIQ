@@ -6,8 +6,12 @@ import MenuIcon from '@mui/icons-material/Menu';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import Sidebar from './Sidebar';
+import VoiceMode from './VoiceMode';
+import useVoiceMode from '../hooks/useVoiceMode';
 
 const MAX_WIDTH = '768px';
+const MODEL_KEY = 'benchiq_model';
+const API_URL = process.env.REACT_APP_API_URL ?? '';
 
 function ChatContainer() {
   const [messages, setMessages] = useState([welcomeMessage()]);
@@ -30,8 +34,13 @@ function ChatContainer() {
     return id;
   });
 
+  const [models, setModels] = useState(null); // null = unavailable -> picker hidden, model omitted
+  const [model, setModel] = useState(() => localStorage.getItem(MODEL_KEY) || '');
+
   const accumulatedRef = useRef('');
-  const API_URL = process.env.REACT_APP_API_URL ?? '';
+  const loadingRef = useRef(false);
+  // Per-request callbacks ({ onToken, onDone, onError, settled }) reachable from processSSELine.
+  const requestRef = useRef({});
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
@@ -39,18 +48,34 @@ function ChatContainer() {
   }, [darkMode]);
 
   useEffect(() => {
+    fetch(`${API_URL}/models`)
+      .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then(data => {
+        const list = Array.isArray(data?.models) ? data.models : [];
+        if (!list.length) return;
+        setModels(list);
+        setModel(prev => (list.some(m => m.id === prev) ? prev : data.default || list[0].id));
+      })
+      .catch(() => setModels(null));
+  }, []);
+
+  useEffect(() => {
+    if (model) localStorage.setItem(MODEL_KEY, model);
+  }, [model]);
+
+  useEffect(() => {
     fetch(`${API_URL}/quota?session_id=${sessionId}`)
       .then(r => r.json())
       .then(setQuota)
       .catch(() => {});
-  }, [API_URL, sessionId]);
+  }, [sessionId]);
 
   const loadSessions = useCallback(() => {
     fetch(`${API_URL}/sessions`)
       .then(r => r.json())
       .then(setSessions)
       .catch(() => {});
-  }, [API_URL]);
+  }, []);
 
   useEffect(() => {
     if (sidebarOpen) loadSessions();
@@ -88,70 +113,115 @@ function ChatContainer() {
         setAgentStatus({ message: data.message });
         break;
       case 'token':
-        accumulatedRef.current += data.text;
-        updateLastMessage({ text: accumulatedRef.current });
+        appendToken(data.text);
         break;
       case 'done':
         setAgentStatus(null);
         if (data.quota) setQuota(data.quota);
         updateLastMessage(prev => ({ ...prev, streaming: false, toolsUsed: data.tools_used }));
+        settle(requestRef.current, null, accumulatedRef.current);
         break;
       case 'error':
         setAgentStatus(null);
         updateLastMessage({ text: `Error: ${data.message}`, streaming: false });
+        settle(requestRef.current, data.message || 'Error');
         break;
       default:
-        if (data.token) {
-          accumulatedRef.current += data.token;
-          updateLastMessage({ text: accumulatedRef.current });
-        }
+        if (data.token) appendToken(data.token);
+    }
+
+    function appendToken(chunk) {
+      if (!chunk) return;
+      accumulatedRef.current += chunk;
+      updateLastMessage({ text: accumulatedRef.current });
+      requestRef.current.onToken?.(chunk);
     }
   }, [updateLastMessage]);
 
-  const handleSend = useCallback(async (e) => {
-    e.preventDefault();
-    if (input.trim() === '' || loading) return;
+  const sendMessage = useCallback(async (text, { voice = false, onToken, onDone, onError } = {}) => {
+    const msg = (text || '').trim();
+    if (!msg) return;
+    if (loadingRef.current) {
+      onError?.('Please wait for the current response to finish.');
+      return;
+    }
+    const request = { onToken, onDone, onError, settled: false };
+    requestRef.current = request;
+    loadingRef.current = true;
 
     const time = formatTime();
     setMessages(prev => [...prev,
-      { text: input, time, sender: 'user' },
+      { text: msg, time, sender: 'user' },
       { text: '', time, sender: 'bot', streaming: true },
     ]);
-    setInput('');
     setLoading(true);
     setAgentStatus(null);
     accumulatedRef.current = '';
+
+    const body = { msg, session_id: sessionId, voice };
+    if (models && model) body.model = model;
 
     try {
       const response = await fetch(`${API_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ msg: input, session_id: sessionId }),
+        body: JSON.stringify(body),
       });
 
       if (response.status === 429) {
-        const data = await response.json();
-        updateLastMessage({ text: `Rate limit reached: ${data.message}`, streaming: false });
+        const data = await response.json().catch(() => ({}));
+        const message = `Rate limit reached: ${data.message || 'please try again later.'}`;
+        updateLastMessage({ text: message, streaming: false });
         if (data.remaining !== undefined) setQuota(data);
+        settle(request, message);
+        return;
+      }
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        const message = data.detail || data.message || `Request failed (${response.status})`;
+        updateLastMessage({ text: `Error: ${message}`, streaming: false });
+        settle(request, String(message));
         return;
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let pending = ''; // carries a partial SSE line across chunk boundaries
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        decoder.decode(value, { stream: true }).split('\n').forEach(processSSELine);
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        lines.forEach(line => processSSELine(line.replace(/\r$/, '')));
+      }
+      pending += decoder.decode();
+      if (pending) processSSELine(pending.replace(/\r$/, ''));
+
+      // Stream closed without a done/error event.
+      if (!request.settled) {
+        updateLastMessage(prev => ({ ...prev, streaming: false }));
+        settle(request, null, accumulatedRef.current);
       }
     } catch (error) {
       console.error("Error:", error);
-      setAgentStatus(null);
       updateLastMessage({ text: "Sorry, something went wrong. Please try again.", streaming: false });
+      settle(request, 'Something went wrong. Please try again.');
     } finally {
+      loadingRef.current = false;
       setLoading(false);
       setAgentStatus(null);
     }
-  }, [input, loading, sessionId, API_URL, updateLastMessage, processSSELine]);
+  }, [sessionId, model, models, updateLastMessage, processSSELine]);
+
+  const handleSend = useCallback((e) => {
+    e.preventDefault();
+    if (input.trim() === '' || loading) return;
+    setInput('');
+    sendMessage(input);
+  }, [input, loading, sendMessage]);
+
+  const voice = useVoiceMode({ sendMessage, apiUrl: API_URL });
 
   const handleNewChat = useCallback(() => {
     const newId = crypto.randomUUID();
@@ -159,7 +229,6 @@ function ChatContainer() {
     setSessionId(newId);
     setMessages([welcomeMessage()]);
     setAgentStatus(null);
-    setLoading(false);
     setSidebarOpen(false);
   }, []);
 
@@ -216,10 +285,12 @@ function ChatContainer() {
             <IconButton onClick={() => setSidebarOpen(true)} size="small" sx={{ color: 'var(--text-secondary)', mr: 1 }}>
               <MenuIcon sx={{ fontSize: 20 }} />
             </IconButton>
-            <img src="/applogo.png" alt="App Logo" style={{ height: '28px', marginRight: '10px', borderRadius: 4 }} />
-            <Box>
-              <Typography sx={{ fontWeight: 600, fontSize: '1rem' }}>Medical Lab Assistant</Typography>
-              <Typography sx={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>AU5812 / AU680 / DXI800</Typography>
+            <img src="/applogo.png" alt="BenchIQ logo" style={{ height: '28px', marginRight: '10px', borderRadius: 4 }} />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 600, fontSize: '1rem' }}>BenchIQ</Typography>
+              <Typography noWrap sx={{ color: 'var(--text-muted)', fontSize: '0.7rem', display: { xs: 'none', sm: 'block' } }}>
+                Lab assistant · AU5812 / AU680 / DXI800
+              </Typography>
             </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -228,8 +299,8 @@ function ChatContainer() {
                 label={`${quota.remaining}/${quota.limit}`}
                 size="small"
                 sx={{
-                  backgroundColor: quota.remaining > 3 ? 'var(--bg-tertiary)' : 'rgba(248,113,113,0.15)',
-                  color: quota.remaining > 3 ? 'var(--text-secondary)' : 'var(--error)',
+                  backgroundColor: quota.remaining > 1 ? 'var(--bg-tertiary)' : 'rgba(248,113,113,0.15)',
+                  color: quota.remaining > 1 ? 'var(--text-secondary)' : 'var(--error)',
                   border: '1px solid var(--border)',
                   fontSize: '0.7rem',
                   height: 24,
@@ -254,9 +325,21 @@ function ChatContainer() {
           margin: '0 8px 36px 8px',
           flexShrink: 0,
         }}>
-          <MessageInput input={input} setInput={setInput} handleSend={handleSend} disabled={loading} />
+          <MessageInput
+            input={input}
+            setInput={setInput}
+            handleSend={handleSend}
+            disabled={loading}
+            models={models}
+            model={model}
+            setModel={setModel}
+            voiceSupported={voice.supported}
+            onVoice={voice.open}
+          />
         </Box>
       </Box>
+
+      <VoiceMode voice={voice} />
     </>
   );
 }
@@ -266,9 +349,17 @@ function formatTime() {
   return now.getHours() + ":" + String(now.getMinutes()).padStart(2, '0');
 }
 
+// Invoke a request's onDone/onError exactly once.
+function settle(request, error, text = '') {
+  if (!request || request.settled) return;
+  request.settled = true;
+  if (error != null) request.onError?.(error);
+  else request.onDone?.(text);
+}
+
 function welcomeMessage() {
   return {
-    text: "Hello! I'm your Medical Lab Assistant. I can help with questions about the AU5812, AU680, and DXI800 analyzers — maintenance, calibration, troubleshooting, reagents, and more. I can also search the web for general lab topics.",
+    text: "Hello! I'm BenchIQ, your lab assistant. I can help with questions about the AU5812, AU680, and DXI800 analyzers — maintenance, calibration, troubleshooting, reagents, and more. I can also search the web for general lab topics.",
     time: formatTime(),
     sender: 'bot',
   };
