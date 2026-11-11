@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google.genai import types
-from app.rate_limit.service import RateLimitService
+from app.rate_limit.service import get_rate_limiter
+from app.security.client_ip import client_ip, ip_key
 from app.observability.events import (
     status_event, tool_start_event, tool_result_event,
     generation_start_event, token_event, done_event, error_event,
@@ -36,12 +37,15 @@ def init(r: dict, ss):
     global runners, session_service, rate_limiter
     runners = r
     session_service = ss
-    rate_limiter = RateLimitService()
+    rate_limiter = get_rate_limiter()
+
+
+UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 
 class ChatRequest(BaseModel):
-    msg: str
-    session_id: str | None = None
+    msg: str = Field(min_length=1, max_length=config.MAX_MESSAGE_CHARS)
+    session_id: str | None = Field(default=None, pattern=UUID_PATTERN)
     model: str | None = None
     voice: bool = False
 
@@ -66,8 +70,25 @@ def _build_message(body: "ChatRequest") -> types.Content:
 
 
 def _get_client_id(request: Request, session_id: str) -> str:
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     return hashlib.sha256(f"{ip}:{session_id}".encode()).hexdigest()[:16]
+
+
+def _check_quota(request: Request, session_id: str):
+    """Layered chat limits: per session, per client IP, and global."""
+    result = rate_limiter.check_chat(
+        _get_client_id(request, session_id), ip_key(client_ip(request)), session_id
+    )
+    if result.allowed:
+        return result, None
+    return result, JSONResponse(
+        status_code=result.status_code,
+        content={
+            "error": "rate_limit_exceeded" if result.status_code == 429 else "capacity_reached",
+            "message": result.reason,
+            **_quota_dict(result.state),
+        },
+    )
 
 
 async def ensure_session(session_id: str):
@@ -98,19 +119,6 @@ def _track_tool(ctx: RequestContext, tool_name: str):
         ctx.clarification_used = True
 
 
-@router.get("/sessions")
-async def list_sessions():
-    result = await session_service.list_sessions(app_name=APP_NAME, user_id="user")
-    return [
-        {
-            "session_id": s.id,
-            "last_update": s.last_update_time,
-            "message_count": len(s.events) if s.events else 0,
-        }
-        for s in result.sessions
-    ]
-
-
 @router.get("/models")
 async def list_models():
     return {
@@ -137,20 +145,12 @@ async def get_quota(request: Request, session_id: str = "default"):
 async def chat(request: Request, body: ChatRequest):
     model_id, runner = _select_runner(body.model)
     session_id = body.session_id or str(uuid.uuid4())
-    client_id = _get_client_id(request, session_id)
 
-    quota_result = rate_limiter.check_and_increment(client_id, session_id)
-    if not quota_result.allowed:
-        return JSONResponse(
-            status_code=429,
-            content={
-                "error": "rate_limit_exceeded",
-                "message": quota_result.reason,
-                **_quota_dict(quota_result.state),
-            },
-        )
+    quota_result, rejected = _check_quota(request, session_id)
+    if rejected:
+        return rejected
 
-    ctx = RequestContext(session_id=session_id, model=model_id)
+    ctx = RequestContext(session_id=session_id, model=model_id, client=ip_key(client_ip(request)))
     rate_limiter.mark_active(session_id)
     try:
         await ensure_session(session_id)
@@ -201,25 +201,17 @@ async def chat(request: Request, body: ChatRequest):
 async def chat_stream(request: Request, body: ChatRequest):
     model_id, runner = _select_runner(body.model)
     session_id = body.session_id or str(uuid.uuid4())
-    client_id = _get_client_id(request, session_id)
 
-    quota_result = rate_limiter.check_and_increment(client_id, session_id)
-    if not quota_result.allowed:
-        return JSONResponse(
-            status_code=429,
-            content={
-                "error": "rate_limit_exceeded",
-                "message": quota_result.reason,
-                **_quota_dict(quota_result.state),
-            },
-        )
+    quota_result, rejected = _check_quota(request, session_id)
+    if rejected:
+        return rejected
 
     rate_limiter.mark_active(session_id)
     await ensure_session(session_id)
     content = _build_message(body)
 
     async def generate():
-        ctx = RequestContext(session_id=session_id, model=model_id)
+        ctx = RequestContext(session_id=session_id, model=model_id, client=ip_key(client_ip(request)))
         tools_used = []
         generating = False
 

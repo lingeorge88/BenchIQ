@@ -64,8 +64,8 @@ function Sidebar({ sessions, currentSessionId, onSelectSession, onNewChat, open 
           >
             <ChatBubbleOutlineIcon sx={{ fontSize: 14, color: 'var(--text-muted)', mr: 1.5 }} />
             <ListItemText
-              primary={`Chat ${session.session_id.slice(0, 8)}`}
-              secondary={`${session.message_count} messages`}
+              primary={session.title || `Chat ${session.session_id.slice(0, 8)}`}
+              secondary={session.updated ? new Date(session.updated).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : null}
               primaryTypographyProps={{
                 fontSize: '0.8rem',
                 color: 'var(--text-primary)',

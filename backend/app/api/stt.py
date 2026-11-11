@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types
 from app import config
+from app.rate_limit.service import get_rate_limiter
+from app.security.client_ip import client_ip, ip_key
 from collections import defaultdict, deque
 import logging
 import time
@@ -60,15 +62,22 @@ async def stt(request: Request):
     if content_type not in ALLOWED_TYPES:
         return _error(415, "unsupported_media_type", "Send audio as audio/wav.")
 
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_AUDIO_BYTES:
+        return _error(413, "audio_too_long", "Audio clip is too long.")
+
     audio = await request.body()
     if len(audio) < 1000:
         return _error(400, "empty_audio", "Audio clip is empty.")
     if len(audio) > MAX_AUDIO_BYTES:
         return _error(413, "audio_too_long", "Audio clip is too long.")
 
-    client_ip = request.client.host if request.client else "unknown"
-    if _throttled(client_ip):
+    ip = client_ip(request)
+    if _throttled(ip):
         return _error(429, "rate_limit_exceeded", "Too many speech requests. Please slow down.")
+    budget = get_rate_limiter().check_stt(ip_key(ip))
+    if not budget.allowed:
+        return _error(budget.status, "rate_limit_exceeded", budget.reason)
 
     started = time.monotonic()
     try:

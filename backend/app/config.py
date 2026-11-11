@@ -38,8 +38,20 @@ TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-Chirp3-HD-Aoede")
 STT_MODEL = os.environ.get("STT_MODEL", "gemini-3.1-flash-lite")
 STT_LOCATION = os.environ.get("STT_LOCATION", "global")
 
-DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "5"))
-BURST_REQUEST_LIMIT = int(os.environ.get("BURST_REQUEST_LIMIT", "3"))
+# Layered abuse limits (rolling 24h windows unless noted).
+DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "5"))  # per chat session
+BURST_REQUEST_LIMIT = int(os.environ.get("BURST_REQUEST_LIMIT", "3"))  # per session, per minute
+IP_DAILY_REQUEST_LIMIT = int(os.environ.get("IP_DAILY_REQUEST_LIMIT", "30"))  # per client IP (shared networks)
+GLOBAL_DAILY_REQUEST_LIMIT = int(os.environ.get("GLOBAL_DAILY_REQUEST_LIMIT", "300"))  # whole app
+TTS_IP_DAILY_CHARS = int(os.environ.get("TTS_IP_DAILY_CHARS", "20000"))
+TTS_GLOBAL_DAILY_CHARS = int(os.environ.get("TTS_GLOBAL_DAILY_CHARS", "200000"))
+STT_IP_DAILY_LIMIT = int(os.environ.get("STT_IP_DAILY_LIMIT", "60"))
+STT_GLOBAL_DAILY_LIMIT = int(os.environ.get("STT_GLOBAL_DAILY_LIMIT", "600"))
+MAX_MESSAGE_CHARS = int(os.environ.get("MAX_MESSAGE_CHARS", "2000"))
+# Cloud Run sits behind Google's front end, so the real client IP is in X-Forwarded-For.
+TRUST_FORWARDED_FOR = os.environ.get(
+    "TRUST_FORWARDED_FOR", "true" if os.environ.get("ENVIRONMENT") == "production" else "false"
+).lower() == "true"
 
 FIRESTORE_CHUNKS_COLLECTION = "medical_chunks"
 FIRESTORE_SESSIONS_COLLECTION = "adk_sessions"

@@ -11,6 +11,9 @@ import useVoiceMode from '../hooks/useVoiceMode';
 
 const MAX_WIDTH = '768px';
 const MODEL_KEY = 'benchiq_model';
+const SESSIONS_KEY = 'benchiq_sessions';
+const MAX_SESSIONS = 20;
+const MAX_MESSAGE_CHARS = 2000;
 const API_URL = process.env.REACT_APP_API_URL ?? '';
 
 function ChatContainer() {
@@ -20,7 +23,7 @@ function ChatContainer() {
   const [agentStatus, setAgentStatus] = useState(null);
   const [quota, setQuota] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sessions, setSessions] = useState([]);
+  const [sessions, setSessions] = useState(loadSessionList);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true;
@@ -70,16 +73,20 @@ function ChatContainer() {
       .catch(() => {});
   }, [sessionId]);
 
-  const loadSessions = useCallback(() => {
-    fetch(`${API_URL}/sessions`)
-      .then(r => r.json())
-      .then(setSessions)
-      .catch(() => {});
+  // Remember this browser's own sessions (the server no longer lists anyone's sessions).
+  const rememberSession = useCallback((id, firstMessage) => {
+    setSessions(prev => {
+      const existing = prev.find(s => s.session_id === id);
+      const entry = {
+        session_id: id,
+        title: existing?.title || firstMessage.slice(0, 60),
+        updated: Date.now(),
+      };
+      const next = [entry, ...prev.filter(s => s.session_id !== id)].slice(0, MAX_SESSIONS);
+      try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
   }, []);
-
-  useEffect(() => {
-    if (sidebarOpen) loadSessions();
-  }, [sidebarOpen, loadSessions]);
 
   const updateLastMessage = useCallback((updater) => {
     setMessages(prev => {
@@ -159,6 +166,7 @@ function ChatContainer() {
     accumulatedRef.current = '';
 
     const body = { msg, session_id: sessionId, voice };
+    rememberSession(sessionId, msg);
     if (models && model) body.model = model;
 
     try {
@@ -168,9 +176,11 @@ function ChatContainer() {
         body: JSON.stringify(body),
       });
 
-      if (response.status === 429) {
+      if (response.status === 429 || response.status === 503) {
         const data = await response.json().catch(() => ({}));
-        const message = `Rate limit reached: ${data.message || 'please try again later.'}`;
+        const message = response.status === 429
+          ? `Rate limit reached: ${data.message || 'please try again later.'}`
+          : data.message || 'BenchIQ is at capacity right now. Please try again later.';
         updateLastMessage({ text: message, streaming: false });
         if (data.remaining !== undefined) setQuota(data);
         settle(request, message);
@@ -178,7 +188,9 @@ function ChatContainer() {
       }
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
-        const message = data.detail || data.message || `Request failed (${response.status})`;
+        const message = response.status === 422
+          ? `Message too long or invalid (max ${MAX_MESSAGE_CHARS} characters).`
+          : (typeof data.detail === 'string' && data.detail) || data.message || `Request failed (${response.status})`;
         updateLastMessage({ text: `Error: ${message}`, streaming: false });
         settle(request, String(message));
         return;
@@ -212,7 +224,7 @@ function ChatContainer() {
       setLoading(false);
       setAgentStatus(null);
     }
-  }, [sessionId, model, models, updateLastMessage, processSSELine]);
+  }, [sessionId, model, models, updateLastMessage, processSSELine, rememberSession]);
 
   const handleSend = useCallback((e) => {
     e.preventDefault();
@@ -342,6 +354,15 @@ function ChatContainer() {
       <VoiceMode voice={voice} />
     </>
   );
+}
+
+function loadSessionList() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+    return Array.isArray(list) ? list.filter(s => s && typeof s.session_id === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function formatTime() {

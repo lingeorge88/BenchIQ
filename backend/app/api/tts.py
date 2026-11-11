@@ -3,6 +3,8 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from google.cloud import texttospeech
 from app import config
+from app.rate_limit.service import get_rate_limiter
+from app.security.client_ip import client_ip, ip_key
 from collections import defaultdict, deque
 import asyncio
 import logging
@@ -61,11 +63,17 @@ async def tts(request: Request, body: TTSRequest):
     if not voice.startswith("en-US-"):
         return JSONResponse(status_code=400, content={"error": "invalid_voice", "message": "Unsupported voice."})
 
-    client_ip = request.client.host if request.client else "unknown"
-    if _throttled(client_ip):
+    ip = client_ip(request)
+    if _throttled(ip):
         return JSONResponse(
             status_code=429,
             content={"error": "rate_limit_exceeded", "message": "Too many speech requests. Please slow down."},
+        )
+    budget = get_rate_limiter().check_tts(ip_key(ip), len(text))
+    if not budget.allowed:
+        return JSONResponse(
+            status_code=budget.status,
+            content={"error": "rate_limit_exceeded", "message": budget.reason},
         )
 
     try:

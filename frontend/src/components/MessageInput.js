@@ -48,6 +48,7 @@ function MessageInput({ input, setInput, handleSend, disabled, models, model, se
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={onKeyDown}
+        inputProps={{ maxLength: 2000 }}
         disabled={disabled}
         sx={{
           '& .MuiOutlinedInput-root': {

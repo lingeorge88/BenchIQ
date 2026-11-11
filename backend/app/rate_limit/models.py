@@ -18,3 +18,4 @@ class QuotaResponse:
     allowed: bool
     state: QuotaState
     reason: str = ""
+    status_code: int = 429
