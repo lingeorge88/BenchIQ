@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+.DS_Store
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+node_modules/
+frontend/node_modules/
+*.md
+.claude/
+.adk/
+JD*.txt
+resources/

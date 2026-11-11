@@ -1,0 +1,13 @@
+google-adk==2.8.0
+google-genai
+google-cloud-firestore
+google-cloud-discoveryengine
+google-cloud-secret-manager
+tavily-python
+fastapi==0.141.1
+uvicorn[standard]
+langchain-community==0.3.26
+langchain-core>=0.3.66,<1.0.0
+pypdf==5.6.1
+python-dotenv==1.1.0
+rank-bm25
